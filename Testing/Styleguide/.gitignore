@@ -1,0 +1,6 @@
+node_modules
+sources/output
+.idea/
+.vscode/
+.DS_Store/
+./output/
