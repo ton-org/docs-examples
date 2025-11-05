@@ -16,7 +16,7 @@ export interface Config {
 export function loadConfig(): Config {
     const isMainnet = process.env.IS_MAINNET === 'true';
     const apiKey = process.env.API_KEY || 'YOUR_API_KEY_HERE';
-    const walletAddress = process.env.WALLET_ADDRESS || 'UQB7AhB4fP7SWtnfnIMcVUkwIgVLKqijlcpjNEPUVontys5I';
+    const walletAddress = process.env.WALLET_ADDRESS || 'UQB7...5I';
 
     const startTime = process.env.START_TIME
         ? parseInt(process.env.START_TIME, 10)

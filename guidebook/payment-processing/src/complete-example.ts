@@ -73,7 +73,7 @@ class MockDatabase {
 const db = new MockDatabase();
 
 // Configuration
-const WALLET_ADDRESS = 'UQB7AhB4fP7SWtnfnIMcVUkwIgVLKqijlcpjNEPUVontys5I';
+const WALLET_ADDRESS = 'UQB7...5I';
 const API_KEY = 'YOUR_API_KEY_HERE';
 const IS_MAINNET = false;
 
