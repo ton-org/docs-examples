@@ -68,16 +68,17 @@ export class AccountSubscription {
 
                 if (newTransactions.length > 0) {
                     // Process from oldest to newest to maintain chronological order
-                    const ordered = [...newTransactions].reverse();
+                    const ordered = newTransactions.reverse();
                     for (const tx of ordered) {
                         await this.onTransaction(tx);
-                    }
 
-                    const latest = newTransactions[0];
-                    // persist lastProcessedLt, lastProcessedHash in database
-                    this.lastProcessedLt = latest.lt.toString();
-                    this.lastProcessedHash = latest.hash().toString('base64');
-                    console.log(`Updated cursor to lt:${this.lastProcessedLt} hash:${this.lastProcessedHash}`);
+                        // persist lastProcessedLt, lastProcessedHash in database
+                        this.lastProcessedLt = tx.lt.toString();
+                        this.lastProcessedHash = tx.hash().toString('base64');
+                        console.log(`Updated cursor to lt:${this.lastProcessedLt} hash:${this.lastProcessedHash}`);
+                    }
+                    // we can optimize storage operations by
+                    // updating cursor only once per batch, but it decreases service stability
                 }
             } catch (error) {
                 console.error('Error in transaction polling:', error);
@@ -169,6 +170,8 @@ export class AccountSubscription {
             const lastTx = transactions[transactions.length - 1];
             const older = await this.fetchNewTransactions(lastTx.lt.toString(), lastTx.hash().toString('base64'), 0);
 
+            // for long service down-time it might make sense
+            // to implement partial tx processing for production
             return [...newTransactions, ...older];
         }
 

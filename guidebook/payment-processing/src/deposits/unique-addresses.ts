@@ -27,7 +27,7 @@
 import { TonClient, WalletContractV5R1 } from '@ton/ton';
 import { Address, internal, fromNano, toNano } from '@ton/core';
 import { mnemonicNew, mnemonicToPrivateKey, KeyPair } from '@ton/crypto';
-import { BlockSubscription } from './BlockSubscription';
+import { BlockSubscription } from '../subscription/BlockSubscription';
 
 // Configuration
 const IS_TESTNET = true;

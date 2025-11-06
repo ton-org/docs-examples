@@ -20,7 +20,7 @@
 
 import { TonClient, Transaction } from '@ton/ton';
 import { fromNano } from '@ton/core';
-import { AccountSubscription } from './AccountSubscription';
+import { AccountSubscription } from '../subscription/AccountSubscription';
 
 // Configuration
 const IS_MAINNET = false; // Set to true for mainnet
@@ -93,12 +93,14 @@ async function onTransaction(tx: Transaction): Promise<void> {
     const amount = info.value.coins;
     const senderAddress = info.src.toString();
     const txHash = tx.hash().toString('base64');
+    const txLt = tx.lt;
 
     console.log('\n=== New Deposit Detected ===');
     console.log(`Amount: ${fromNano(amount)} TON`);
     console.log(`From: ${senderAddress}`);
     console.log(`Comment: ${comment}`);
     console.log(`Transaction Hash: ${txHash}`);
+    console.log(`Transaction LT: ${txLt.toString()}`);
     console.log(`Timestamp: ${new Date(tx.now * 1000).toISOString()}`);
     console.log('===========================\n');
 
