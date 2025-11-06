@@ -142,6 +142,10 @@ function parseComment(tx: Transaction): string | undefined {
     return undefined;
 }
 
+// Resume cursor - store the last processed LT + hash in production
+const LAST_PROCESSED_LT: string | undefined = undefined;
+const LAST_PROCESSED_HASH: string | undefined = undefined;
+
 /**
  * Transaction handler
  */
@@ -225,12 +229,20 @@ async function main(): Promise<void> {
     });
 
     // Start monitoring
-    const startTime = Math.floor(Date.now() / 1000) - 3600; // Last hour
-    const subscription = new AccountSubscription(client, WALLET_ADDRESS, startTime, onTransaction);
+    const subscription = new AccountSubscription(client, WALLET_ADDRESS, onTransaction, {
+        lastLt: LAST_PROCESSED_LT,
+        lastHash: LAST_PROCESSED_HASH,
+        limit: 10,
+    });
 
     console.log('=== Starting Transaction Monitor ===');
     console.log(`Wallet: ${WALLET_ADDRESS}`);
     console.log(`Network: ${IS_MAINNET ? 'MAINNET' : 'TESTNET'}`);
+    if (LAST_PROCESSED_LT && LAST_PROCESSED_HASH) {
+        console.log(`Resume from LT:${LAST_PROCESSED_LT} HASH:${LAST_PROCESSED_HASH}`);
+    } else {
+        console.log('Resume from latest transactions (no cursor saved)');
+    }
     console.log(`Polling every 10 seconds...`);
     console.log('Press Ctrl+C to stop\n');
 
@@ -240,6 +252,9 @@ async function main(): Promise<void> {
     process.on('SIGINT', () => {
         console.log('\n\nShutting down...');
         subscription.stop();
+
+        const cursor = subscription.getLastProcessed();
+        console.log('Persist cursor to DB:', cursor);
 
         console.log('\n=== Final Payment Status ===');
         const finalPayments = db.getAllPayments();

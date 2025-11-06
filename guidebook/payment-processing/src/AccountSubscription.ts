@@ -14,12 +14,20 @@ const wait = (milliseconds: number): Promise<void> => {
     });
 };
 
+interface AccountSubscriptionOptions {
+    limit?: number;
+    lastLt?: string;
+    lastHash?: string;
+    archival?: boolean;
+}
+
 export class AccountSubscription {
     private readonly client: TonClient;
     private readonly accountAddress: Address;
-    private startTime: number;
     private readonly onTransaction: (tx: Transaction) => Promise<void>;
     private readonly limit: number;
+    private lastProcessedLt?: string;
+    private lastProcessedHash?: string;
     private isProcessing: boolean = false;
     private intervalId?: NodeJS.Timeout;
 
@@ -28,22 +36,21 @@ export class AccountSubscription {
      *
      * @param client - TonClient instance for API calls
      * @param accountAddress - Wallet address to monitor
-     * @param startTime - Unix timestamp to start monitoring from (transactions before this will be ignored)
      * @param onTransaction - Callback function to handle each transaction
-     * @param limit - Number of transactions to fetch per request (default: 10)
+     * @param options - Additional subscription options (limit, archival, resume cursor)
      */
     constructor(
         client: TonClient,
         accountAddress: string,
-        startTime: number,
         onTransaction: (tx: Transaction) => Promise<void>,
-        limit: number = 10,
+        options: AccountSubscriptionOptions = {},
     ) {
         this.client = client;
         this.accountAddress = Address.parse(accountAddress);
-        this.startTime = startTime;
         this.onTransaction = onTransaction;
-        this.limit = limit;
+        this.limit = options.limit ?? 10;
+        this.lastProcessedLt = options.lastLt;
+        this.lastProcessedHash = options.lastHash;
     }
 
     /**
@@ -57,12 +64,20 @@ export class AccountSubscription {
 
             this.isProcessing = true;
             try {
-                const result = await this.handleTransactionsBatch();
+                const newTransactions = await this.fetchNewTransactions();
 
-                if (result > 0) {
-                    this.startTime = result;
-                    // In production, you should persist this timestamp to your database
-                    console.log(`Updated startTime to ${result}`);
+                if (newTransactions.length > 0) {
+                    // Process from oldest to newest to maintain chronological order
+                    const ordered = [...newTransactions].reverse();
+                    for (const tx of ordered) {
+                        await this.onTransaction(tx);
+                    }
+
+                    const latest = newTransactions[0];
+                    // persist lastProcessedLt, lastProcessedHash in database
+                    this.lastProcessedLt = latest.lt.toString();
+                    this.lastProcessedHash = latest.hash().toString('base64');
+                    console.log(`Updated cursor to lt:${this.lastProcessedLt} hash:${this.lastProcessedHash}`);
                 }
             } catch (error) {
                 console.error('Error in transaction polling:', error);
@@ -95,11 +110,11 @@ export class AccountSubscription {
      * So TxID = address+LT+hash, these three parameters uniquely identify the transaction.
      * In our case, we are monitoring one wallet and the address is `accountAddress`.
      */
-    private async handleTransactionsBatch(
+    private async fetchNewTransactions(
         offsetLt?: string,
         offsetHash?: string,
         retryCount: number = 0,
-    ): Promise<number> {
+    ): Promise<Transaction[]> {
         if (offsetLt && offsetHash) {
             console.log(`Fetching ${this.limit} transactions before LT:${offsetLt} Hash:${offsetHash}`);
         } else {
@@ -127,40 +142,53 @@ export class AccountSubscription {
 
             if (retryCount < 10) {
                 await wait(retryCount * 1000);
-                return this.handleTransactionsBatch(offsetLt, offsetHash, retryCount);
+                return this.fetchNewTransactions(offsetLt, offsetHash, retryCount);
             }
-            return 0;
+            return [];
         }
 
         console.log(`Received ${transactions.length} transactions`);
 
         if (transactions.length === 0) {
-            return this.startTime;
+            return [];
         }
 
-        // Process transactions in order (newest first)
-        let latestTime = 0;
+        const newTransactions: Transaction[] = [];
 
         for (const tx of transactions) {
-            if (tx.now < this.startTime) {
-                return latestTime || this.startTime;
+            if (this.isAlreadyProcessed(tx)) {
+                // We've reached already processed transactions, stop here
+                return newTransactions;
             }
 
-            if (latestTime === 0) {
-                latestTime = tx.now;
-            }
-
-            // call our handler
-            await this.onTransaction(tx);
+            newTransactions.push(tx);
         }
 
-        // If we got fewer transactions than the limit, we've reached the end
-        if (transactions.length < this.limit) {
-            return latestTime || this.startTime;
+        // If we fetched a full page, there might be more new transactions
+        if (transactions.length === this.limit) {
+            const lastTx = transactions[transactions.length - 1];
+            const older = await this.fetchNewTransactions(lastTx.lt.toString(), lastTx.hash().toString('base64'), 0);
+
+            return [...newTransactions, ...older];
         }
 
-        // Continue fetching older transactions
-        const lastTx = transactions[transactions.length - 1];
-        return this.handleTransactionsBatch(lastTx.lt.toString(), lastTx.hash().toString('base64'), 0);
+        return newTransactions;
+    }
+
+    private isAlreadyProcessed(tx: Transaction): boolean {
+        if (!this.lastProcessedLt || !this.lastProcessedHash) {
+            return false;
+        }
+
+        const currentLt = tx.lt.toString();
+        const currentHash = tx.hash().toString('base64');
+        return currentLt === this.lastProcessedLt && currentHash === this.lastProcessedHash;
+    }
+
+    getLastProcessed(): { lt?: string; hash?: string } {
+        return {
+            lt: this.lastProcessedLt,
+            hash: this.lastProcessedHash,
+        };
     }
 }

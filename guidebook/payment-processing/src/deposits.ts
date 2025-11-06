@@ -25,10 +25,10 @@ import { AccountSubscription } from './AccountSubscription';
 // Configuration
 const IS_MAINNET = false; // Set to true for mainnet
 
+// Docs: https://beta-docs.ton.org/ecosystem/node/setup-mytonctrl#liteserver-quickstart
 // API Configuration
 // Get your API key at https://toncenter.com
 // Or run your own API: https://github.com/toncenter/ton-http-api
-// Docs: https://beta-docs.ton.org/ecosystem/node/setup-mytonctrl#liteserver-quickstart
 const MAINNET_API_URL = 'https://toncenter.com/api/v2/jsonRPC';
 const TESTNET_API_URL = 'https://testnet.toncenter.com/api/v2/jsonRPC';
 const API_KEY = 'YOUR_API_KEY_HERE'; // Replace with your actual API key
@@ -36,13 +36,15 @@ const API_KEY = 'YOUR_API_KEY_HERE'; // Replace with your actual API key
 // Your wallet address that will receive deposits
 const MY_WALLET_ADDRESS = 'UQB7...5I';
 
-// Start time - transactions before this timestamp will be ignored
-// In production, load this from your database
-const START_TIME = Math.floor(Date.now() / 1000) - 3600; // Start from 1 hour ago
+// Resume cursor - load last processed transaction LT + hash from your database
+// If undefined, the subscriber will process recent transactions returned by the node
+const LAST_PROCESSED_LT: string | undefined = undefined;
+const LAST_PROCESSED_HASH: string | undefined = undefined;
 
 /**
  * Parses message body to extract text comment if present
  */
+// TODO: vendor to ton/ton
 function parseComment(tx: Transaction): string | undefined {
     if (!tx.inMessage?.body) return undefined;
 
@@ -132,7 +134,12 @@ async function main(): Promise<void> {
     console.log('Starting deposit monitoring...');
     console.log(`Network: ${IS_MAINNET ? 'MAINNET' : 'TESTNET'}`);
     console.log(`Wallet: ${MY_WALLET_ADDRESS}`);
-    console.log(`Start time: ${new Date(START_TIME * 1000).toISOString()}\n`);
+    if (LAST_PROCESSED_LT && LAST_PROCESSED_HASH) {
+        console.log(`Resume from lt:${LAST_PROCESSED_LT} hash:${LAST_PROCESSED_HASH}`);
+    } else {
+        console.log('Resume from latest transactions (no cursor saved)');
+    }
+    console.log('');
 
     // Initialize TON client
     const endpoint = IS_MAINNET ? MAINNET_API_URL : TESTNET_API_URL;
@@ -142,7 +149,11 @@ async function main(): Promise<void> {
     });
 
     // Create and start the subscription
-    const subscription = new AccountSubscription(client, MY_WALLET_ADDRESS, START_TIME, onTransaction);
+    const subscription = new AccountSubscription(client, MY_WALLET_ADDRESS, onTransaction, {
+        limit: 10,
+        lastLt: LAST_PROCESSED_LT,
+        lastHash: LAST_PROCESSED_HASH,
+    });
 
     await subscription.start(10_000); // Poll every 10 seconds
 
@@ -151,6 +162,8 @@ async function main(): Promise<void> {
     // Handle graceful shutdown
     process.on('SIGINT', () => {
         console.log('\nStopping deposit monitoring...');
+        const cursor = subscription.getLastProcessed();
+        console.log('Persist cursor to DB:', cursor);
         subscription.stop();
         process.exit(0);
     });

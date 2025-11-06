@@ -5,6 +5,8 @@
     "scripts": {
         "start": "ts-node src/deposits.ts",
         "start:simple": "ts-node src/simple-example.ts",
+        "start:multi": "ts-node src/deposits-multi-wallet.ts",
+        "start:simple-multi": "ts-node src/simple-multi-wallet.ts",
         "payment-link": "ts-node src/payment-link.ts",
         "build": "tsc",
         "format": "prettier --write \"src/**/*.ts\""
