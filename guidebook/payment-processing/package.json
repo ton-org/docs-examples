@@ -3,11 +3,9 @@
     "version": "1.0.0",
     "description": "TON Payment Processing Examples with TypeScript",
     "scripts": {
-        "start": "ts-node src/deposits.ts",
-        "start:simple": "ts-node src/simple-example.ts",
-        "start:multi": "ts-node src/deposits-multi-wallet.ts",
-        "start:simple-multi": "ts-node src/simple-multi-wallet.ts",
-        "payment-link": "ts-node src/payment-link.ts",
+        "start:invoices": "ts-node src/deposits/invoices.ts",
+        "start:unique": "ts-node src/deposits/unique-addresses.ts",
+        "payment-link": "ts-node src/utils/payment-link.ts",
         "build": "tsc",
         "format": "prettier --write \"src/**/*.ts\""
     },
