@@ -2,21 +2,22 @@
  * Block Subscription for monitoring blockchain transactions
  *
  * This class subscribes to new blocks on the TON blockchain and processes
- * all transactions in those blocks. It uses the Index API for efficient
- * block-by-block monitoring.
+ * all transactions in those blocks using the native @ton/ton API.
+ *
  */
 
-import { TonClient } from '@ton/ton';
-import { Transaction } from '@ton/ton';
+import { TonClient, Transaction } from '@ton/ton';
 
 export class BlockSubscription {
     private readonly client: TonClient;
     private lastProcessedBlock: number;
-    private readonly onTransaction: (tx: Transaction) => Promise<void>;
-    private readonly indexApiUrl: string;
-    private readonly indexApiKey: string;
+    private readonly onTransaction: (
+        tx: Transaction,
+        block: { workchain: number; shard: string; seqno: number },
+    ) => Promise<void>;
     private isProcessing: boolean = false;
     private intervalId?: NodeJS.Timeout;
+    private processedBlocks: Set<string> = new Set();
 
     /**
      * Creates a new BlockSubscription instance
@@ -24,21 +25,15 @@ export class BlockSubscription {
      * @param client - TonClient instance
      * @param startBlock - Masterchain block number to start from
      * @param onTransaction - Callback for each transaction
-     * @param indexApiUrl - Index API endpoint URL
-     * @param indexApiKey - API key for Index API
      */
     constructor(
         client: TonClient,
         startBlock: number,
-        onTransaction: (tx: Transaction) => Promise<void>,
-        indexApiUrl: string,
-        indexApiKey: string,
+        onTransaction: (tx: Transaction, block: { workchain: number; shard: string; seqno: number }) => Promise<void>,
     ) {
         this.client = client;
         this.lastProcessedBlock = startBlock;
         this.onTransaction = onTransaction;
-        this.indexApiUrl = indexApiUrl;
-        this.indexApiKey = indexApiKey;
     }
 
     /**
@@ -90,61 +85,60 @@ export class BlockSubscription {
     private async processNextBlock(): Promise<void> {
         // Get current masterchain info
         const masterchainInfo = await this.client.getMasterchainInfo();
-        const currentBlock = masterchainInfo.latestSeqno;
+        const targetSeqno = masterchainInfo.latestSeqno;
 
-        if (currentBlock <= this.lastProcessedBlock) {
-            // No new blocks yet
+        if (targetSeqno <= this.lastProcessedBlock) {
             return;
         }
 
-        const nextBlock = this.lastProcessedBlock + 1;
+        let nextSeqno = this.lastProcessedBlock + 1;
 
-        console.log(`Processing masterchain block ${nextBlock} (current: ${currentBlock})`);
-
-        // Fetch all transactions for this block using Index API
-        const transactions = await this.getTransactionsByMasterchainBlock(nextBlock);
-
-        console.log(`Found ${transactions.length} transactions in block ${nextBlock}`);
-
-        // Process each transaction
-        for (const tx of transactions) {
-            await this.onTransaction(tx);
+        while (nextSeqno <= targetSeqno) {
+            const totalCount = await this.processBlock(nextSeqno);
+            console.log(`✓ Processed masterchain block ${nextSeqno} (${totalCount} transactions)`);
+            this.lastProcessedBlock = nextSeqno;
+            // Persist the last processed block number in durable storage here to resume safely after restarts.
+            nextSeqno += 1;
         }
-
-        // Update last processed block
-        this.lastProcessedBlock = nextBlock;
-
-        // In production, save this to your database
-        console.log(`✓ Processed block ${nextBlock}`);
     }
 
     /**
-     * Fetches all transactions for a masterchain block using Index API
+     * Processes transactions in a specific block (workchain + shard + seqno)
      */
-    private async getTransactionsByMasterchainBlock(blockNumber: number): Promise<Transaction[]> {
-        const url = `${this.indexApiUrl}getTransactionsByMasterchainSeqno?seqno=${blockNumber}`;
+    private async processBlock(seqno: number): Promise<number> {
+        const masterchainShard = '8000000000000000';
+        let processedCount = 0;
 
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                'X-API-Key': this.indexApiKey,
-            },
-        });
+        processedCount += await this.processShard({ workchain: -1, shard: masterchainShard, seqno });
 
-        if (!response.ok) {
-            throw new Error(`Index API error: ${response.status} ${response.statusText}`);
+        const shards = await this.client.getWorkchainShards(seqno);
+
+        for (const shard of shards) {
+            processedCount += await this.processShard(shard);
         }
 
-        const data: any = await response.json();
+        return processedCount;
+    }
 
-        if (data.error) {
-            throw new Error(`Index API error: ${data.error}`);
+    private async processShard(block: { workchain: number; shard: string; seqno: number }): Promise<number> {
+        const blockKey = `${block.workchain}:${block.shard}:${block.seqno}`;
+        console.log(`  Processing block ${blockKey}`);
+
+        try {
+            const transactions = await this.client.getShardTransactions(block.workchain, block.seqno, block.shard);
+
+            for (const shortTx of transactions) {
+                const fullTx = await this.client.getTransaction(shortTx.account, shortTx.lt, shortTx.hash);
+
+                if (fullTx) {
+                    await this.onTransaction(fullTx, block);
+                }
+            }
+
+            return transactions.length;
+        } catch (error) {
+            console.error(`Error processing block ${blockKey}:`, error);
+            return 0;
         }
-
-        // Index API returns transactions in a different format
-        // We return them as-is and handle in the transaction callback
-        return data as Transaction[];
     }
 }

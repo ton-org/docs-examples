@@ -24,9 +24,9 @@
  * They can be redeployed automatically on the next deposit.
  */
 
-import { TonClient, WalletContractV5R1 } from '@ton/ton';
-import { Address, internal, fromNano, toNano } from '@ton/core';
-import { mnemonicNew, mnemonicToPrivateKey, KeyPair } from '@ton/crypto';
+import { TonClient, WalletContractV5R1, Transaction } from '@ton/ton';
+import { Address, internal, fromNano, toNano, SendMode } from '@ton/core';
+import { mnemonicNew, mnemonicToPrivateKey } from '@ton/crypto';
 import { BlockSubscription } from '../subscription/BlockSubscription';
 
 // Configuration
@@ -37,10 +37,8 @@ const NODE_API_URL = IS_TESTNET
     ? 'https://testnet.toncenter.com/api/v2/jsonRPC'
     : 'https://toncenter.com/api/v2/jsonRPC';
 
-const INDEX_API_URL = IS_TESTNET ? 'https://testnet.toncenter.com/api/index/' : 'https://toncenter.com/api/index/';
-
 // Your master HOT wallet address that receives all deposits
-const HOT_WALLET_ADDRESS = 'UQB7AhB4fP7SWtnfnIMcVUkwIgVLKqijlcpjNEPUVontys5I';
+const HOT_WALLET_ADDRESS = 'UQB...5I';
 
 // Network global ID for Wallet V5
 // -239 for mainnet, -3 for testnet
@@ -83,27 +81,15 @@ class DepositWalletsDB {
             userId,
             address,
             publicKey: keyPair.publicKey,
+            // use separate storage for private keys in production
             secretKey: keyPair.secretKey,
         };
 
+        // persist to real database in production
         this.wallets.set(address, depositWallet);
 
         console.log(`[DB] Created deposit wallet for user ${userId}: ${address}`);
         return depositWallet;
-    }
-
-    /**
-     * Checks if an address is a known deposit wallet
-     */
-    isDepositAddress(address: string): boolean {
-        // Normalize address to non-bounceable format
-        try {
-            const addr = Address.parse(address);
-            const normalized = addr.toString({ bounceable: false });
-            return this.wallets.has(normalized);
-        } catch {
-            return false;
-        }
     }
 
     /**
@@ -132,7 +118,7 @@ const db = new DepositWalletsDB();
 /**
  * Forwards all balance from deposit wallet to HOT wallet
  */
-async function forwardToHotWallet(client: TonClient, depositWallet: DepositWallet, comment?: string): Promise<void> {
+async function forwardToHotWallet(client: TonClient, depositWallet: DepositWallet): Promise<void> {
     const wallet = WalletContractV5R1.create({
         walletId: {
             networkGlobalId: NETWORK_GLOBAL_ID,
@@ -166,13 +152,16 @@ async function forwardToHotWallet(client: TonClient, depositWallet: DepositWalle
         messages: [
             internal({
                 to: HOT_WALLET_ADDRESS,
-                value: toNano('0'), // Will be replaced by mode 128
-                body: comment || '',
+                value: 0n, // Will be replaced by mode 128
                 bounce: false,
             }),
         ],
-        sendMode: 128 + 32, // Send all balance + destroy contract
+        // Send all balance + destroy contract
+        sendMode: SendMode.CARRY_ALL_REMAINING_BALANCE + SendMode.DESTROY_ACCOUNT_IF_ZERO,
     });
+
+    // In production we need to monitor this transfer and retry it/mark for validation
+    // if it fails
 
     console.log(`✓ Transfer sent from ${depositWallet.address} to HOT wallet`);
     console.log(`  User: ${depositWallet.userId}`);
@@ -182,64 +171,41 @@ async function forwardToHotWallet(client: TonClient, depositWallet: DepositWalle
 /**
  * Processes a deposit transaction
  */
-async function processDeposit(client: TonClient, tx: any): Promise<void> {
-    const address = tx.account;
-
-    // Check if this is one of our deposit wallets
-    if (!db.isDepositAddress(address)) {
+async function processDeposit(
+    client: TonClient,
+    tx: Transaction,
+    depositWallet: DepositWallet,
+    block: { workchain: number; shard: string; seqno: number },
+): Promise<void> {
+    // Check if this is an incoming transaction with a source address
+    if (!tx.inMessage?.info.src) {
         return;
     }
+
+    const inMessage = tx.inMessage;
+    if (!inMessage || inMessage.info.type !== 'internal') {
+        return;
+    }
+
+    const amount = inMessage.info.value.coins;
+    const depositAddress = inMessage.info.dest.toString({ bounceable: false });
+    const sender = inMessage.info.src?.toString({ bounceable: false }) ?? 'unknown';
+    const txHash = tx.hash().toString('base64');
+    const txLt = tx.lt.toString();
 
     console.log('\n=== Deposit Detected ===');
-    console.log(`Address: ${address}`);
-    console.log(`Transaction: ${tx.hash}`);
-
-    // Verify transaction with direct node request
-    // This is important for security - always double-check with your own node
-    const addr = Address.parse(address);
-    const transactions = await client.getTransactions(addr, {
-        limit: 1,
-        lt: tx.lt,
-        hash: tx.hash,
-    });
-
-    if (transactions.length === 0) {
-        console.error('⚠️  Transaction not found in node - possible security issue!');
-        return;
-    }
-
-    const txFromNode = transactions[0];
-
-    // Verify it's an incoming transaction with no outgoing messages (no bounce)
-    if (!txFromNode.inMessage) {
-        console.log('No incoming message, skipping');
-        return;
-    }
-
-    if (txFromNode.outMessages.size > 0) {
-        console.log('Has outgoing messages (bounced), skipping');
-        return;
-    }
-
-    // Get deposit wallet info
-    const depositWallet = db.getDepositWallet(address);
-    if (!depositWallet) {
-        console.error('Deposit wallet not found in database');
-        return;
-    }
-
-    // Extract deposit amount
-    const info = txFromNode.inMessage.info;
-    if (info.type !== 'internal') return;
-
-    const amount = info.value.coins;
-    console.log(`Amount: ${fromNano(amount)} TON`);
+    console.log(`Block: ${block.workchain}:${block.shard}:${block.seqno}`);
+    console.log(`Deposit wallet: ${depositAddress}`);
     console.log(`User: ${depositWallet.userId}`);
+    console.log(`Amount: ${fromNano(amount)} TON`);
+    console.log(`Sender: ${sender}`);
+    console.log(`Transaction hash: ${txHash}`);
+    console.log(`Transaction LT: ${txLt}`);
+    console.log(`Timestamp: ${new Date(tx.now * 1000).toISOString()}`);
     console.log('======================\n');
 
-    // Forward to HOT wallet
     try {
-        await forwardToHotWallet(client, depositWallet, `User ${depositWallet.userId} deposit`);
+        await forwardToHotWallet(client, depositWallet);
 
         // In production:
         // 1. Mark transaction as processed in your database
@@ -250,21 +216,6 @@ async function processDeposit(client: TonClient, tx: any): Promise<void> {
     } catch (error) {
         console.error('Error forwarding to HOT wallet:', error);
         // In production: retry logic should be implemented
-    }
-}
-
-/**
- * Transaction handler
- */
-async function onTransaction(client: TonClient, tx: any): Promise<void> {
-    // Check for outgoing messages (skip bounced transactions)
-    if (tx.out_msgs && tx.out_msgs.length > 0) {
-        return;
-    }
-
-    // Check if transaction is on one of our deposit addresses
-    if (db.isDepositAddress(tx.account)) {
-        await processDeposit(client, tx);
     }
 }
 
@@ -304,14 +255,29 @@ async function main(): Promise<void> {
 
     console.log(`Starting from masterchain block ${startBlock}\n`);
 
+    // Process inbound transactions for deposit wallets only
+    const handleTransaction: ConstructorParameters<typeof BlockSubscription>[2] = async (tx, block) => {
+        if (tx.outMessages.size > 0) {
+            return;
+        }
+
+        const inMessage = tx.inMessage;
+        if (!inMessage || inMessage.info.type !== 'internal') {
+            return;
+        }
+
+        const destination = inMessage.info.dest.toString({ bounceable: false });
+        const depositWallet = db.getDepositWallet(destination);
+
+        if (!depositWallet) {
+            return;
+        }
+
+        await processDeposit(client, tx, depositWallet, block);
+    };
+
     // Start block subscription
-    const subscription = new BlockSubscription(
-        client,
-        startBlock,
-        (tx) => onTransaction(client, tx),
-        INDEX_API_URL,
-        API_KEY,
-    );
+    const subscription = new BlockSubscription(client, startBlock, handleTransaction);
 
     await subscription.start(1000); // Check every second
 
