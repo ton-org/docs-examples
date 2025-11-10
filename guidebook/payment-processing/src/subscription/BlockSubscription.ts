@@ -17,7 +17,6 @@ export class BlockSubscription {
     ) => Promise<void>;
     private isProcessing: boolean = false;
     private intervalId?: NodeJS.Timeout;
-    private processedBlocks: Set<string> = new Set();
 
     /**
      * Creates a new BlockSubscription instance
