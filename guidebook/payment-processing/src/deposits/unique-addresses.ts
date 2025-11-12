@@ -25,7 +25,7 @@
  */
 
 import { TonClient, WalletContractV5R1, Transaction } from '@ton/ton';
-import { Address, internal, fromNano, toNano, SendMode } from '@ton/core';
+import { Address, internal, fromNano, SendMode } from '@ton/core';
 import { mnemonicNew, mnemonicToPrivateKey } from '@ton/crypto';
 import { BlockSubscription } from '../subscription/BlockSubscription';
 

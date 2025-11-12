@@ -18,7 +18,6 @@ interface AccountSubscriptionOptions {
     limit?: number;
     lastLt?: string;
     lastHash?: string;
-    archival?: boolean;
 }
 
 export class AccountSubscription {
