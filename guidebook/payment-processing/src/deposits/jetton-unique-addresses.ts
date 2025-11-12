@@ -11,7 +11,7 @@ import { JettonMaster, TonClient, Transaction, WalletContractV5R1 } from '@ton/t
 import { mnemonicNew, mnemonicToPrivateKey } from '@ton/crypto';
 import { BlockSubscription } from '../subscription/BlockSubscription';
 
-const INTERNAL_TRANSFER_NOTIFICATION = 0x178d4519n;
+const INTERNAL_TRANSFER_NOTIFICATION = 0x7362d09cn;
 
 const IS_TESTNET = true;
 const API_KEY = 'YOUR_API_KEY_HERE';
