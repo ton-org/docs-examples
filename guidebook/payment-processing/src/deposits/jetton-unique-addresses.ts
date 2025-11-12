@@ -21,8 +21,6 @@ const NODE_API_URL = IS_TESTNET
 const HOT_WALLET_ADDRESS = 'UQB...HOT';
 const NETWORK_GLOBAL_ID = IS_TESTNET ? -3 : -239;
 
-const formatAddress = (address: Address): string => address.toString({ bounceable: false, testOnly: IS_TESTNET });
-
 interface JettonConfig {
     symbol: string;
     minterAddress: string;
