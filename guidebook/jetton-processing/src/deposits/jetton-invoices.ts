@@ -40,13 +40,13 @@ interface JettonConfig {
 const SUPPORTED_JETTONS: readonly JettonConfig[] = [
     {
         symbol: 'TestJetton',
-        minterAddress: 'EQB...28',
+        minterAddress: 'UQB22lH8P_P2OitCe8UYRxpuDF5GVqCfYTL7PDz3OzbuHebu',
         decimals: 6,
         minDeposit: 1n,
     },
     {
         symbol: 'KOTE',
-        minterAddress: 'EQB...NIj',
+        minterAddress: 'UQB22lH8P_P2OitCe8UYRxpuDF5GVqCfYTL7PDz3OzbuHebu',
         decimals: 9,
         minDeposit: 1n,
     },
