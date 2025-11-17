@@ -1,17 +1,16 @@
 {
-    "name": "payment-processing",
+    "name": "toncoin-processing",
     "version": "1.0.0",
-    "description": "TON Payment Processing Examples with TypeScript",
+    "description": "Toncoin Payment Processing Examples with TypeScript",
     "scripts": {
-        "start:invoices": "ts-node src/deposits/invoices.ts",
+        "start": "ts-node src/deposits/invoices.ts",
         "start:unique": "ts-node src/deposits/unique-addresses.ts",
-        "payment-link": "ts-node src/utils/payment-link.ts",
         "build": "tsc",
         "format": "prettier --write \"src/**/*.ts\""
     },
     "dependencies": {
-        "@ton/core": "^0.59.0",
-        "@ton/ton": "^15.3.1",
+        "@ton/core": "^0.62.0",
+        "@ton/ton": "^15.4.0",
         "@ton/crypto": "^3.3.0"
     },
     "devDependencies": {

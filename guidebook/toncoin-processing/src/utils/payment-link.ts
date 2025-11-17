@@ -5,12 +5,14 @@
  * for users to easily send deposits with the correct UUID.
  */
 
+import { randomUUID } from 'node:crypto';
 import { toNano } from '@ton/core';
+import { loadConfig } from './config';
 
 export interface PaymentRequest {
-    walletAddress: string;
-    amount: bigint;
-    comment: string;
+    readonly walletAddress: string;
+    readonly amount: bigint;
+    readonly comment: string;
 }
 
 /**
@@ -30,36 +32,38 @@ export interface PaymentRequest {
 export function generatePaymentLink(request: PaymentRequest): string {
     const { walletAddress, amount, comment } = request;
 
-    // Encode the comment for URL safety
-    const encodedComment = encodeURIComponent(comment);
+    const params = new URLSearchParams({
+        amount: amount.toString(),
+        text: comment,
+    });
 
-    // Build the deeplink
-    return `ton://transfer/${walletAddress}?amount=${amount}&text=${encodedComment}`;
+    return `ton://transfer/${walletAddress}?${params.toString()}`;
 }
 
 /**
- * Generates a UUID for payment tracking
- * Simple implementation - in production, use a proper UUID library
+ * Generates a UUID for payment tracking using Node.js built-in crypto
  */
 export function generatePaymentUUID(): string {
-    return `payment-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    return randomUUID();
 }
 
 /**
- * Example usage
+ * Example usage demonstrating payment link generation
  */
 export function createPaymentExample(): void {
-    const walletAddress = 'UQB7...5I';
+    const config = loadConfig();
     const amount = toNano('1.5'); // 1.5 TON
     const uuid = generatePaymentUUID();
 
     console.log('=== Payment Request ===');
+    console.log(`Network: ${config.isTestnet ? 'TESTNET' : 'MAINNET'}`);
+    console.log(`Wallet: ${config.walletAddress}`);
     console.log(`UUID: ${uuid}`);
     console.log(`Amount: 1.5 TON`);
     console.log();
 
     const deeplink = generatePaymentLink({
-        walletAddress,
+        walletAddress: config.walletAddress,
         amount,
         comment: uuid,
     });
