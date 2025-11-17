@@ -287,8 +287,8 @@ async function main(): Promise<void> {
             return;
         }
 
-        // Check if source is a known jetton wallet
-        const metadata = jettonWalletIndex.get(inMessage.info.src.toRawString());
+        // Check if destination is a known jetton wallet
+        const metadata = jettonWalletIndex.get(inMessage.info.dest.toRawString());
         if (!metadata) {
             return;
         }
